@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-// forcing a hot module reload...
 import {
   View,
   Text,
@@ -9,703 +8,372 @@ import {
   SafeAreaView,
   Platform,
   StatusBar as RNStatusBar,
-  Modal,
   ScrollView,
+  Modal,
+  Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import {
   useFonts,
   SpaceGrotesk_500Medium,
 } from "@expo-google-fonts/space-grotesk";
 import { Inter_400Regular, Inter_700Bold } from "@expo-google-fonts/inter";
 
-const { width } = Dimensions.get("window");
+const { height } = Dimensions.get("window");
 const operators = ["+", "-", "×", "÷", "%"];
 
-const App = () => {
+export default function App() {
   const [display, setDisplay] = useState("0");
   const [expression, setExpression] = useState("");
   const [isResult, setIsResult] = useState(false);
   const [history, setHistory] = useState([]);
-  const [receiptVisible, setReceiptVisible] = useState(false);
-
-  console.log("App loaded properly!");
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const [fontsLoaded] = useFonts({
     SpaceGrotesk_500Medium,
     Inter_400Regular,
     Inter_700Bold,
   });
+  if (!fontsLoaded) return null;
 
-  if (!fontsLoaded) {
-    return null;
-  }
+  const endsWithOp = (v) => operators.includes(v.slice(-1));
 
-  const endsWithOperator = (value) => operators.includes(value.slice(-1));
-
-  const handlePress = (value) => {
-    if (value === "AC") {
-      clear();
+  const press = (value) => {
+    if (value === "AC") { clear(); return; }
+    if (value === "=") { calculate(); return; }
+    if (value === "check") { setHistoryVisible(true); return; }
+    if (value === "DEL") {
+      if (expression.length <= 1) { setExpression("0"); setDisplay("0"); }
+      else { const ne = expression.slice(0, -1); setExpression(ne); setDisplay(ne.slice(-1) || "0"); }
       return;
     }
-
-    if (value === "=") {
-      calculate();
-      return;
-    }
-
-    if (value === "make_receipt") {
-      setReceiptVisible(true);
-      return;
-    }
-
-    if (
-      [
-        "check_prev",
-        "check_next",
-        "correct",
-        "gt",
-        "mu",
-      ].includes(value)
-    ) {
-      return;
-    }
-
-    if (display.length >= 16 && !operators.includes(value)) {
-      return;
-    }
+    if (["gt","mu","mrc","m_plus","m_minus","plusminus","sqrt","gst"].includes(value)) return;
+    if (display.length >= 14 && !operators.includes(value)) return;
 
     if (isResult && !operators.includes(value)) {
-      if (value === ".") {
-        setExpression("0.");
-        setDisplay("0.");
-      } else {
-        setExpression(value);
-        setDisplay(value);
-      }
-      setIsResult(false);
-      return;
+      const nv = value === "." ? "0." : value;
+      setExpression(nv); setDisplay(nv); setIsResult(false); return;
     }
-
     if (operators.includes(value)) {
-      if (expression === "" && value !== "-") {
-        return;
-      }
-      if (endsWithOperator(expression)) {
-        setExpression(expression.slice(0, -1) + value);
-      } else {
-        setExpression(expression + value);
-      }
-      setDisplay(value);
-      return;
+      if (expression === "" && value !== "-") return;
+      if (endsWithOp(expression)) setExpression(expression.slice(0, -1) + value);
+      else setExpression(expression + value);
+      setDisplay(value); return;
     }
-
     if (value === ".") {
-      if (expression === "" || endsWithOperator(expression)) {
-        setExpression(expression + "0.");
-        setDisplay("0.");
-        return;
-      }
-
-      const lastNumber = expression.split(/[\+\-\×\÷\%]/).pop();
-      if (!lastNumber.includes(".")) {
-        setExpression(expression + ".");
-        setDisplay(endsWithOperator(display) ? "0." : display + ".");
-      }
+      if (expression === "" || endsWithOp(expression)) { setExpression(expression + "0."); setDisplay("0."); return; }
+      const last = expression.split(/[\+\-\×\÷\%]/).pop();
+      if (!last.includes(".")) { setExpression(expression + "."); setDisplay(endsWithOp(display) ? "0." : display + "."); }
       return;
     }
-
     if (value === "00") {
-      if (
-        expression === "" ||
-        endsWithOperator(expression) ||
-        display === "0"
-      ) {
-        setExpression("0");
-        setDisplay("0");
-      } else {
-        setExpression(expression + "00");
-        setDisplay(display + "00");
-      }
+      if (!expression || endsWithOp(expression) || display === "0") { setExpression("0"); setDisplay("0"); }
+      else { setExpression(expression + "00"); setDisplay(display + "00"); }
       return;
     }
-
-    const newDisplay =
-      display === "0" || operators.includes(display) ? value : display + value;
-    const newExpression = expression === "0" ? value : expression + value;
-    setExpression(newExpression);
-    setDisplay(newDisplay);
+    const nd = display === "0" || operators.includes(display) ? value : display + value;
+    const ne = expression === "0" ? value : expression + value;
+    setExpression(ne); setDisplay(nd);
   };
 
   const calculate = () => {
-    if (!expression) {
-      return;
-    }
-
+    if (!expression) return;
     let expr = expression.replace(/×/g, "*").replace(/÷/g, "/");
-    if (endsWithOperator(expr)) {
-      expr = expr.slice(0, -1);
-    }
-
+    if (endsWithOp(expr)) expr = expr.slice(0, -1);
     try {
-      let result = eval(expr);
+      const result = eval(expr);
       if (typeof result === "number" && isFinite(result)) {
-        const formatted = parseFloat(result.toFixed(10)).toString();
-        
-        const historyItem = `${expression.replace(/\*/g, '×').replace(/\//g, '÷')} = ${formatted}`;
-        setHistory(prev => [...prev, historyItem]);
-
-        setDisplay(formatted);
-        setExpression(formatted);
-      } else {
-        setDisplay("Error");
-        setExpression("");
-      }
-    } catch {
-      setDisplay("Error");
-      setExpression("");
-    }
-
+        const fmt = parseFloat(result.toFixed(10)).toString();
+        const exStr = expression.replace(/\*/g, "×").replace(/\//g, "÷");
+        const now = new Date();
+        setHistory(prev => [...prev, {
+          time: `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+          equation: `${exStr} = ${fmt}`,
+        }]);
+        setDisplay(fmt); setExpression(fmt);
+      } else { setDisplay("Error"); setExpression(""); }
+    } catch { setDisplay("Error"); setExpression(""); }
     setIsResult(true);
   };
 
-  const clear = () => {
-    setDisplay("0");
-    setExpression("");
-    setIsResult(false);
+  const clear = () => { setDisplay("0"); setExpression(""); setIsResult(false); };
+
+  const downloadReceipt = async () => {
+    if (!history.length) { Alert.alert("No History", "No calculations yet."); return; }
+    try {
+      const content = "CITIZEN CT-512\n=== RECEIPT ===\n\n" + history.map(h => `[${h.time}]\n${h.equation}`).join("\n\n");
+      if (Platform.OS === "android") {
+        const { StorageAccessFramework } = FileSystem;
+        const p = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (p.granted) {
+          const uri = await StorageAccessFramework.createFileAsync(p.directoryUri, "citizen-receipt.txt", "text/plain");
+          await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+          Alert.alert("✓ Saved", "Receipt saved to your folder."); return;
+        }
+        Alert.alert("Permission Denied"); return;
+      }
+      const uri = FileSystem.cacheDirectory + "citizen-receipt.txt";
+      await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "text/plain" });
+    } catch { Alert.alert("Error", "Could not save."); }
   };
 
-  const buttonProps = {
-    function: {
-      style: styles.functionButton,
-      textStyle: styles.functionText,
-    },
-    correct: {
-      style: styles.correctButton,
-      textStyle: styles.correctText,
-    },
-    ac: {
-      style: styles.acButton,
-      textStyle: styles.acText,
-    },
-    operator: {
-      style: styles.operatorButton,
-      textStyle: styles.operatorText,
-    },
-    number: {
-      style: styles.numberButton,
-      textStyle: styles.numberText,
-    },
-    equals: {
-      style: styles.equalsButton,
-      textStyle: styles.equalsText,
-    },
-  };
-
-  const topRow1 = [
-    { label: "Check\nPrev", value: "check_prev", ...buttonProps.function },
-    { label: "Check\nNext", value: "check_next", ...buttonProps.function },
-    { label: "CORRECT", value: "correct", ...buttonProps.correct },
-    { label: "ON/AC", value: "AC", ...buttonProps.ac },
-  ];
-
-  const topRow2 = [
-    { label: "GT", value: "gt", ...buttonProps.operator },
-    { label: "MU", value: "mu", ...buttonProps.operator },
-    { label: "%", value: "%", ...buttonProps.operator },
-    { label: "÷", value: "÷", ...buttonProps.operator },
-  ];
-
-  const numberRows = [
-    [
-      { label: "7", value: "7", ...buttonProps.number },
-      { label: "8", value: "8", ...buttonProps.number },
-      { label: "9", value: "9", ...buttonProps.number },
-      { label: "×", value: "×", ...buttonProps.operator },
-    ],
-    [
-      { label: "4", value: "4", ...buttonProps.number },
-      { label: "5", value: "5", ...buttonProps.number },
-      { label: "6", value: "6", ...buttonProps.number },
-      { label: "-", value: "-", ...buttonProps.operator },
-    ],
-    [
-      { label: "1", value: "1", ...buttonProps.number },
-      { label: "2", value: "2", ...buttonProps.number },
-      { label: "3", value: "3", ...buttonProps.number },
-      { type: "placeholder" },
-    ],
-    [
-      { label: "0", value: "0", ...buttonProps.number },
-      { label: "00", value: "00", ...buttonProps.number },
-      { label: ".", value: ".", ...buttonProps.number },
-      { type: "placeholder" },
-    ],
-  ];
+  // Simple button wrapper
+  const Btn = ({ label, onPress, bg, color, flex = 1, fz = 20 }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.6}
+      style={[s.btn, { flex, backgroundColor: bg }]}
+    >
+      <Text style={[s.btnTxt, { color, fontSize: fz }]} adjustsFontSizeToFit numberOfLines={2}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={s.safe}>
       <StatusBar style="light" />
-      <Modal visible={receiptVisible} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.receiptContainer}>
-            <Text style={styles.receiptHeader}>-- RECEIPT --</Text>
-            <ScrollView style={styles.receiptScroll}>
-              {history.length === 0 ? (
-                <Text style={styles.receiptTextEmpty}>No history yet.</Text>
-              ) : (
-                history.map((item, index) => (
-                  <Text key={index} style={styles.receiptText}>
-                    {item}
-                  </Text>
-                ))
-              )}
+
+      {/* ── History Modal (slide-up sheet) ── */}
+      <Modal visible={historyVisible} animationType="slide" transparent>
+        <View style={s.overlay}>
+          <View style={s.sheet}>
+            <View style={s.handle} />
+            <Text style={s.sheetTitle}>CITIZEN CT-512</Text>
+            <Text style={s.sheetSub}>— RECEIPT —</Text>
+            <ScrollView style={{ maxHeight: height * 0.42, marginBottom: 20 }} contentContainerStyle={{ paddingBottom: 8 }}>
+              {!history.length
+                ? <Text style={s.emptyTxt}>No calculations yet.</Text>
+                : [...history].reverse().map((item, i) => (
+                  <View key={i} style={s.histRow}>
+                    <Text style={s.histTime}>{item.time}</Text>
+                    <Text style={s.histEq}>{item.equation}</Text>
+                  </View>
+                ))}
             </ScrollView>
-            <View style={styles.receiptFooter}>
-              <TouchableOpacity onPress={() => setHistory([])} style={styles.clearBtn} activeOpacity={0.7}>
-                <Text style={styles.clearBtnText}>CLEAR</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setReceiptVisible(false)} style={styles.closeBtn} activeOpacity={0.7}>
-                <Text style={styles.closeBtnText}>CLOSE</Text>
-              </TouchableOpacity>
+            <View style={s.sheetFoot}>
+              <TouchableOpacity onPress={() => setHistory([])} style={s.fBtnRed} activeOpacity={0.7}><Text style={s.fTxtRed}>CLEAR</Text></TouchableOpacity>
+              <TouchableOpacity onPress={downloadReceipt}     style={s.fBtnTeal} activeOpacity={0.7}><Text style={s.fTxtW}>SAVE</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setHistoryVisible(false)} style={s.fBtnGrey} activeOpacity={0.7}><Text style={s.fTxtW}>CLOSE</Text></TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.title}>CITIZEN CT-512</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <Text style={styles.subtitle}>SMART CALCULATOR</Text>
-        </View>
-      </View>
+      {/* ── Calculator Body ── */}
+      <View style={s.body}>
 
-      <View style={styles.main}>
-        <View style={styles.display}>
-          <View style={styles.displayLabels}>
-            <Text style={styles.label}>MADE BY ABHISHEK</Text>
-          </View>
-          <Text
-            style={styles.displayText}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {display}
-          </Text>
+        {/* Brand bar */}
+        <View style={s.brandBar}>
+          <Text style={s.brandName}>CITIZEN</Text>
+          <Text style={s.brandMeta}>CT-512  ·  112 STEPS CHECK</Text>
         </View>
 
-        <View style={styles.keypad}>
-          <View style={styles.row}>
-            {topRow1.map((btn, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[styles.button, btn.style]}
-                onPress={() => handlePress(btn.value)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.buttonText, btn.textStyle]}>
-                  {btn.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* LCD */}
+        <View style={s.lcdBezel}>
+          <View style={s.lcdScreen}>
+            <Text style={s.lcdStep}>01</Text>
+            <Text style={s.lcdNum} numberOfLines={1} adjustsFontSizeToFit>{display}</Text>
           </View>
+        </View>
 
-          <View style={styles.row}>
-            {topRow2.map((btn, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[styles.button, btn.style]}
-                onPress={() => handlePress(btn.value)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.buttonText, btn.textStyle]}>
-                  {btn.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {numberRows.map((row, rowIndex) => (
-            <View style={styles.row} key={rowIndex}>
-              {row.map((btn, index) => {
-                if (btn.type === "placeholder") {
-                  return (
-                    <View
-                      key={index}
-                      style={[styles.button, styles.placeholderButton]}
-                    />
-                  );
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={[styles.button, btn.style]}
-                    onPress={() => handlePress(btn.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.buttonText, btn.textStyle]}>
-                      {btn.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-          <TouchableOpacity
-            style={styles.plusAbsolute}
-            onPress={() => handlePress("+")}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.operatorText}>+</Text>
+        {/* Sub-panel row: CHECK | CORRECT+DEL | Solar */}
+        <View style={s.subRow}>
+          <TouchableOpacity style={s.checkBtn} onPress={() => press("check")} activeOpacity={0.75}>
+            <Text style={s.checkTxt}>CHECK  ➔</Text>
           </TouchableOpacity>
-
-          <View style={styles.row}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.bottomWideButton,
-                styles.numberButton,
-              ]}
-              onPress={() => handlePress("make_receipt")}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.buttonText, styles.numberText]}>
-                Make Receipt
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.equalsButton]}
-              onPress={() => handlePress("=")}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.equalsText}>=</Text>
-            </TouchableOpacity>
+          <TouchableOpacity style={s.correctBtn} onPress={() => press("DEL")} activeOpacity={0.75}>
+            <Text style={s.correctTxt}>CORRECT / DEL</Text>
+          </TouchableOpacity>
+          <View style={s.solar}>
+            {[0,1,2,3].map(i => <View key={i} style={s.solarCell}/>)}
           </View>
         </View>
+        <Text style={s.stepsLbl}>112 STEPS CHECK</Text>
 
-        <View style={styles.chassis}>
-          <Text style={styles.chassisText}>120 Steps Check & Correct</Text>
-          <View style={styles.dots}>
-            <View style={styles.dot} />
-            <View style={styles.dot} />
-          </View>
+        {/* CE | Settings | ON/AC row */}
+        <View style={s.acRow}>
+          <Btn label="CE"  onPress={() => press("AC")} bg="#1e1e1e" color="#11bcb0" fz={16} />
+          <Btn label="Menu"   onPress={() => {}}           bg="#2a2a2a" color="#aaa"    fz={20} />
+          <Btn label="ON / AC" onPress={() => press("AC")} bg="#00b894" color="#fff" fz={15} />
         </View>
+
+        {/* ─── MAIN KEYPAD ───────────────────────────────────────
+          Layout matches Citizen CT-512 + reference image 2:
+
+          LEFT COL (narrow, light grey):
+            MR | M+ | M- | +/- | √x | GT | MU   (7 buttons)
+
+          RIGHT 4 COLS × 5 rows (with + spanning rows 3+4):
+            Col-A:  GST  |  7  |  4  |  1  |  0
+            Col-B:   %   |  8  |  5  |  2  |  00
+            Col-C:   ÷   |  9  |  6  |  3  |  .
+            Col-D:   ×   |  -  | [+tall]   |  =
+        ──────────────────────────────────────────────────────── */}
+        <View style={s.keypad}>
+
+          {/* Left memory column — 7 light-grey buttons */}
+          <View style={s.memCol}>
+            <Btn label="MR"  onPress={() => press("mrc")}      bg="#d2cec8" color="#1a1a1a" fz={13}/>
+            <Btn label="M+"  onPress={() => press("m_plus")}   bg="#d2cec8" color="#1a1a1a" fz={13}/>
+            <Btn label="M−"  onPress={() => press("m_minus")}  bg="#d2cec8" color="#1a1a1a" fz={13}/>
+            <Btn label="+/−" onPress={() => press("plusminus")} bg="#d2cec8" color="#1a1a1a" fz={12}/>
+            <Btn label="√x"  onPress={() => press("sqrt")}     bg="#d2cec8" color="#1a1a1a" fz={13}/>
+            <Btn label="GT"  onPress={() => press("gt")}       bg="#d2cec8" color="#1a1a1a" fz={13}/>
+            <Btn label="MU"  onPress={() => press("mu")}       bg="#d2cec8" color="#1a1a1a" fz={13}/>
+          </View>
+
+          {/* Col-A: GST 7 4 1 0 */}
+          <View style={s.col}>
+            <Btn label="GST" onPress={() => press("gst")} bg="#2a2a2a" color="#ccc" fz={13}/>
+            <Btn label="7"   onPress={() => press("7")}   bg="#212121" color="#eee"/>
+            <Btn label="4"   onPress={() => press("4")}   bg="#212121" color="#eee"/>
+            <Btn label="1"   onPress={() => press("1")}   bg="#212121" color="#eee"/>
+            <Btn label="0"   onPress={() => press("0")}   bg="#212121" color="#eee"/>
+          </View>
+
+          {/* Col-B: % 8 5 2 00 */}
+          <View style={s.col}>
+            <Btn label="%"   onPress={() => press("%")}  bg="#2a2a2a" color="#ccc"/>
+            <Btn label="8"   onPress={() => press("8")}  bg="#212121" color="#eee"/>
+            <Btn label="5"   onPress={() => press("5")}  bg="#212121" color="#eee"/>
+            <Btn label="2"   onPress={() => press("2")}  bg="#212121" color="#eee"/>
+            <Btn label="00"  onPress={() => press("00")} bg="#212121" color="#eee"/>
+          </View>
+
+          {/* Col-C: ÷ 9 6 3 . */}
+          <View style={s.col}>
+            <Btn label="÷"   onPress={() => press("÷")}  bg="#2a2a2a" color="#ddd"/>
+            <Btn label="9"   onPress={() => press("9")}  bg="#212121" color="#eee"/>
+            <Btn label="6"   onPress={() => press("6")}  bg="#212121" color="#eee"/>
+            <Btn label="3"   onPress={() => press("3")}  bg="#212121" color="#eee"/>
+            <Btn label="·"   onPress={() => press(".")}  bg="#212121" color="#eee"/>
+          </View>
+
+          {/* Col-D: × − [+tall flex:2] = */}
+          <View style={s.col}>
+            <Btn label="×" onPress={() => press("×")} bg="#2a2a2a" color="#ddd"/>
+            <Btn label="−" onPress={() => press("-")} bg="#2a2a2a" color="#ddd"/>
+            {/* Tall + button takes flex:2 (same as 2 normal rows) */}
+            <Btn label="+" onPress={() => press("+")} bg="#2a2a2a" color="#ddd" flex={2} fz={28}/>
+            <Btn label="=" onPress={() => press("=")} bg="#00b894" color="#fff" fz={26}/>
+          </View>
+
+        </View>
+
+        {/* Footer */}
+        <View style={s.footer}><Text style={s.footerTxt}>MADE BY ABHISHEK</Text></View>
+
       </View>
     </SafeAreaView>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  container: {
+const GAP = 5;
+
+const s = StyleSheet.create({
+  safe: {
     flex: 1,
-    backgroundColor: "#131313",
-    paddingTop: Platform.OS === "android" ? RNStatusBar.currentHeight || 40 : 0,
-    paddingBottom: 24,
+    backgroundColor: "#0d0d0d",
+    paddingTop: Platform.OS === "android" ? RNStatusBar.currentHeight : 0,
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+  body: { flex: 1, backgroundColor: "#161616" },
+
+  // Brand bar
+  brandBar: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 14, paddingVertical: 5, backgroundColor: "#0d0d0d",
   },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  icon: {
-    fontSize: 20,
-    color: "#5ddbc2",
-  },
-  title: {
-    fontFamily: "SpaceGrotesk_500Medium",
-    fontSize: 18,
-    color: "#5ddbc2",
-    letterSpacing: 1,
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  subtitle: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 10,
-    color: "#9ca3af",
-    letterSpacing: 2,
-    fontWeight: "700",
-  },
-  settingsIcon: {
-    fontSize: 20,
-    color: "#6b7280",
-  },
-  main: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  solarPanel: {
-    alignSelf: "flex-end",
-    marginRight: 8,
-    marginBottom: 14,
-  },
-  solarStrip: {
-    width: 92,
-    height: 22,
-    backgroundColor: "#0e0e0e",
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  display: {
-    width: "100%",
-    minHeight: 110,
-    backgroundColor: "#0e0e0e",
-    borderRadius: 14,
-    padding: 16,
+  brandName: { fontFamily: "SpaceGrotesk_500Medium", fontSize: 17, color: "#11bcb0", letterSpacing: 3 },
+  brandMeta: { fontFamily: "Inter_400Regular", fontSize: 8, color: "#3a3a3a", letterSpacing: 1.5 },
+
+  // LCD
+  lcdBezel: { backgroundColor: "#090909", paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6 },
+  lcdScreen: {
+    backgroundColor: "#c0c9a6",
+    borderRadius: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    height: 200,
     justifyContent: "flex-end",
     alignItems: "flex-end",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-    marginBottom: 28,
-  },
-  displayLabels: {
-    position: "absolute",
-    top: 12,
-    left: 16,
-    flexDirection: "row",
-    gap: 16,
-  },
-  label: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 10,
-    color: "rgba(255,255,255,0.4)",
-    letterSpacing: 1,
-    fontWeight: "700",
-  },
-  displayText: {
-    fontFamily: "SpaceGrotesk_500Medium",
-    fontSize: 56,
-    color: "#5ddbc2",
-    letterSpacing: -1,
-  },
-  keypad: {
     position: "relative",
-    width: width * 0.94,
-    maxWidth: 440,
   },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  button: {
-    width: (width * 0.94 - 36) / 4,
-    height: 64,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  buttonText: {
-    textAlign: "center",
-    fontFamily: "Inter_400Regular",
-    fontWeight: "700",
-    color: "#e5e2e1",
-  },
-  functionButton: {
-    backgroundColor: "#0162cf",
-  },
-  functionText: {
-    color: "#dae4ff",
-    fontSize: 12,
-    letterSpacing: 1,
-  },
-  correctButton: {
-    backgroundColor: "#2a2a2a",
-  },
-  correctText: {
-    color: "#e5e2e1",
-    fontSize: 14,
-  },
-  acButton: {
-    backgroundColor: "#5ddbc2",
-  },
-  acText: {
-    color: "#00382f",
-    fontSize: 14,
-  },
-  operatorButton: {
-    backgroundColor: "#353534",
-  },
-  operatorText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 24,
-    color: "#e5e2e1",
-  },
-  numberButton: {
-    backgroundColor: "#2a2a2a",
-  },
-  numberText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 22,
-    color: "#e5e2e1",
-  },
-  placeholderButton: {
-    backgroundColor: "transparent",
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  plusAbsolute: {
-    position: "absolute",
-    right: 0,
-    top: 304,
-    width: (width * 0.94 - 36) / 4,
-    height: 64 * 2 + 12,
-    backgroundColor: "#353534",
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  plusTall: {
-    width: (width * 0.94 - 36) / 4,
-    height: 64 * 2 + 12,
-  },
-  bottomWideButton: {
-    width: ((width * 0.94 - 36) / 4) * 3 + 24,
-  },
-  equalsButton: {
-    backgroundColor: "#5ddbc2",
-  },
-  equalsText: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 24,
-    color: "#00382f",
-  },
-  chassis: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 4,
-    marginTop: 16,
-  },
-  chassisText: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 9,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.3)",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  dots: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#353534",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  receiptContainer: {
-    width: "100%",
-    backgroundColor: "#fffdf9",
-    borderRadius: 4,
-    maxHeight: "80%",
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-    borderStyle: "dashed",
-    borderWidth: 2,
-    borderColor: "#e0e0e0",
-  },
-  receiptHeader: {
-    fontFamily: "SpaceGrotesk_500Medium",
-    fontSize: 22,
-    textAlign: "center",
-    marginBottom: 24,
-    color: "#111",
-    letterSpacing: 2,
-    paddingBottom: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: "#eee",
-  },
-  receiptScroll: {
-    flexGrow: 0,
-    marginBottom: 24,
-  },
-  receiptTextEmpty: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 16,
-    color: "#888",
-    textAlign: "center",
-    paddingVertical: 20,
-  },
-  receiptText: {
-    fontFamily: "SpaceGrotesk_500Medium",
-    fontSize: 20,
-    color: "#333",
-    marginBottom: 12,
-    textAlign: "right",
-  },
-  receiptFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderTopWidth: 2,
-    borderTopColor: "#eee",
-    paddingTop: 20,
-  },
-  clearBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: "#fee2e2",
-    borderRadius: 4,
-  },
-  clearBtnText: {
-    fontFamily: "Inter_700Bold",
-    color: "#b91c1c",
-    fontSize: 16,
-  },
-  closeBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: "#111",
-    borderRadius: 4,
-  },
-  closeBtnText: {
-    fontFamily: "Inter_700Bold",
-    color: "#fff",
-    fontSize: 16,
-  },
-});
+  lcdStep: { position: "absolute", top: 7, left: 10, fontFamily: "SpaceGrotesk_500Medium", fontSize: 13, color: "#5a6050" },
+  lcdNum: { fontFamily: "SpaceGrotesk_500Medium", fontSize: 56, color: "#1b2119", letterSpacing: -1 },
 
-export default App;
+  // Sub row: CHECK | CORRECT/DEL | Solar
+  subRow: {
+    flexDirection: "row", alignItems: "stretch",
+    paddingHorizontal: 10, paddingTop: 6, gap: GAP,
+  },
+  checkBtn: {
+    flex: 1.1, backgroundColor: "#4170c4", borderRadius: 3,
+    paddingVertical: 8, justifyContent: "center", alignItems: "center",
+  },
+  checkTxt: { fontFamily: "Inter_700Bold", fontSize: 12, color: "#fff" },
+  correctBtn: {
+    flex: 1.3, backgroundColor: "#252525", borderRadius: 3,
+    paddingVertical: 8, justifyContent: "center", alignItems: "center",
+  },
+  correctTxt: { fontFamily: "Inter_400Regular", fontSize: 10, color: "#888" },
+  solar: { width: 66, flexDirection: "row", borderRadius: 3, overflow: "hidden", backgroundColor: "#221810" },
+  solarCell: { flex: 1, borderRightWidth: 1, borderRightColor: "#3a2416" },
+
+  stepsLbl: { fontFamily: "Inter_700Bold", fontSize: 9, color: "#c9a85c", paddingHorizontal: 10, paddingTop: 4, paddingBottom: 2, letterSpacing: 1 },
+
+  // ON/AC row
+  acRow: { flexDirection: "row", paddingHorizontal: 10, paddingBottom: 5, height: 42, gap: GAP },
+
+  // Keypad
+  keypad: { flex: 1, flexDirection: "row", paddingHorizontal: 10, paddingBottom: 8, gap: GAP },
+
+  memCol: { width: 54, gap: GAP },
+  col:    { flex: 1, gap: GAP },
+
+  // Generic button
+  btn: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 4,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.07)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.8,
+    shadowRadius: 2,
+    elevation: 5,
+  },
+  btnTxt: { fontFamily: "Inter_700Bold", textAlign: "center" },
+
+  // Footer
+  footer: { alignItems: "center", paddingVertical: 5, backgroundColor: "#0d0d0d" },
+  footerTxt: { fontFamily: "Inter_400Regular", fontSize: 8, color: "#2a2a2a", letterSpacing: 2 },
+
+  // ── History Modal ──
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.88)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: "#181818",
+    borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    maxHeight: height * 0.78,
+    padding: 24,
+    borderTopWidth: 1, borderTopColor: "#252525",
+  },
+  handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: "#333", alignSelf: "center", marginBottom: 20 },
+  sheetTitle: { fontFamily: "SpaceGrotesk_500Medium", fontSize: 22, color: "#11bcb0", textAlign: "center", letterSpacing: 3 },
+  sheetSub: { fontFamily: "Inter_400Regular", fontSize: 11, color: "#3a3a3a", textAlign: "center", letterSpacing: 2, marginTop: 3, marginBottom: 18 },
+  emptyTxt: { fontFamily: "Inter_400Regular", fontSize: 15, color: "#2e2e2e", textAlign: "center", paddingVertical: 28 },
+  histRow: { borderBottomWidth: 1, borderBottomColor: "#222", paddingVertical: 12, alignItems: "flex-end" },
+  histTime: { fontFamily: "Inter_400Regular", fontSize: 10, color: "#3a3a3a", letterSpacing: 1, marginBottom: 3 },
+  histEq: { fontFamily: "SpaceGrotesk_500Medium", fontSize: 20, color: "#ddd" },
+  sheetFoot: { flexDirection: "row", gap: 10 },
+  fBtnRed:  { flex: 1, paddingVertical: 13, borderRadius: 8, borderWidth: 1.5, borderColor: "#e11d48", alignItems: "center" },
+  fBtnTeal: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: "#11bcb0", alignItems: "center" },
+  fBtnGrey: { flex: 1, paddingVertical: 13, borderRadius: 8, backgroundColor: "#222", alignItems: "center" },
+  fTxtRed: { fontFamily: "Inter_700Bold", color: "#e11d48", fontSize: 12 },
+  fTxtW:   { fontFamily: "Inter_700Bold", color: "#fff", fontSize: 12 },
+});
